@@ -41,16 +41,14 @@ def kep_pressure_correction():
 
 def upload_linear_perturbations():
 
-    # dimensionless perturbations from linear perturbations computation
+    # (old code for reading in perturbations, kept commented for bug fixing)
+    """
     s.Vlin = np.loadtxt('vtot.dat')
     s.Ulin = np.loadtxt('utot.dat')
     s.Dlin = np.loadtxt('stot.dat')
 
     s.Xlin = np.loadtxt('X.dat') # initialize linear mesh
     s.Ylin = np.loadtxt('Y.dat')
-
-    """
-    print("----------LOADED----------")
 
     lin_perts = np.array([s.Ulin, s.Vlin, s.Dlin])
     lin_mesh = np.array([s.Xlin, s.Ylin])
@@ -59,6 +57,20 @@ def upload_linear_perturbations():
     np.save("linear_perturbations_mesh.npy", lin_mesh)
     """
 
+    # dimensionless perturbations from linear perturbations computation
+
+    # read perturbations from files
+    perts = np.load("linear_perturbations.npy")
+    mesh = np.load("linear_perturbations_mesh.npy")
+
+    # get perturbation arrays
+    s.Ulin = perts[0]
+    s.Vlin = perts[1]
+    s.Dlin = perts[2]
+    s.Xlin = mesh[0]
+    s.Ylin = mesh[1]
+
+    # linear perturbations read in grid
     x = s.Xlin[0,:]
     y = s.Ylin[:,0]
 

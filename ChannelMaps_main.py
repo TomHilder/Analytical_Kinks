@@ -10,6 +10,9 @@ import ChannelMaps_settings as s
 
 import matplotlib.pyplot as plt
 
+# CHOOSE COORDINATE SYSTEM, True for polar and False for Cartesian. 
+# Note that NONE of the plotting functions will work for Cartesian, but the output files will be correct.
+polar_coords = True
 
 if len(sys.argv) != 2:
     print("Error!")
@@ -26,41 +29,78 @@ os.makedirs(path, exist_ok=True)
 
 sh.copy(file, path)
 
-print('~ Creating Keplerian velocity field ...')
-vK = f.create_Keplerian_velocity_field()
-#vK = f.create_Keplerian_velocity_field_cartesian()
+# Run for polar coordinates:
+if polar_coords == True:
 
-print('~ Uploading linear perturbations ...')
-xl,yl,dl,ul,vl = f.upload_linear_perturbations()
+    print('~ Creating Keplerian velocity field ...')
+    vK = f.create_Keplerian_velocity_field()
 
-print('~ Adding linear perturbations to Keplerian velocity field ...')
-vr,vphi,deltav = f.vKepler_plus_linear_pert(xl,yl,ul,vl,vK)
-#vr,vphi,deltav = f.vKepler_plus_linear_pert_cartesian(xl,yl,ul,vl,vK)
+    print('~ Uploading linear perturbations ...')
+    xl,yl,dl,ul,vl = f.upload_linear_perturbations()
 
-print('~ Nonlinear perturbations:')
-dnl,unl,vnl = f.compute_nonlinear_pert()
-#dnl,unl,vnl = f.compute_nonlinear_pert_cartesian()
+    print('~ Adding linear perturbations to Keplerian velocity field ...')
+    vr,vphi,deltav = f.vKepler_plus_linear_pert(xl,yl,ul,vl,vK)
 
-print('~ Adding nonlinear perturbations ...')
-vr,vphi,deltav = f.add_nonlinear_pert(unl,vnl,vr,vphi,deltav,vK)
-#vr,vphi,deltav = f.add_nonlinear_pert_cartesian(unl,vnl,vr,vphi,deltav,vK)
+    print('~ Nonlinear perturbations:')
+    dnl,unl,vnl = f.compute_nonlinear_pert()
 
-if s.density:
-    density_pert = f.merge_density_lin_nonlin(xl,yl,dl,dnl)
-    #density_pert = f.merge_density_lin_nonlin_cartesian(xl,yl,dl,dnl)
+    print('~ Adding nonlinear perturbations ...')
+    vr,vphi,deltav = f.add_nonlinear_pert(unl,vnl,vr,vphi,deltav,vK)
 
-print('~ Saving output fields to files')
+    if s.density:
+        density_pert = f.merge_density_lin_nonlin(xl,yl,dl,dnl)
 
-if s.density:
-    np.save(path + 'density_pert.npy', density_pert)
-    rho = f.get_normalise_density_field(density_pert)
-    #rho = f.get_normalise_density_field_cartesian(density_pert)
-    np.save(path + 'density.npy', rho)
+    print('~ Saving output fields to files')
 
-np.save(path + 'vr.npy', vr)
-np.save(path + 'vphi.npy', vphi)
-np.save(path + 'deltavphi.npy', vphi - (-s.cw * vK))
-np.save(path + 'deltav.npy', deltav)
+    if s.density:
+        np.save(path + 'density_pert.npy', density_pert)
+        rho = f.get_normalise_density_field(density_pert)
+        np.save(path + 'density.npy', rho)
+
+    np.save(path + 'vr.npy', vr)
+    np.save(path + 'vphi.npy', vphi)
+    np.save(path + 'deltavphi.npy', vphi - (-s.cw * vK))
+    np.save(path + 'deltav.npy', deltav)
+
+else:
+
+    print('~ Creating Keplerian velocity field ...')
+    vK = f.create_Keplerian_velocity_field_cartesian()
+
+    print('~ Uploading linear perturbations ...')
+    xl,yl,dl,ul,vl = f.upload_linear_perturbations()
+
+    print('~ Adding linear perturbations to Keplerian velocity field ...')
+    vr,vphi,deltav = f.vKepler_plus_linear_pert_cartesian(xl,yl,ul,vl,vK)
+
+    print('~ Nonlinear perturbations:')
+    dnl,unl,vnl = f.compute_nonlinear_pert_cartesian()
+
+    print('~ Adding nonlinear perturbations ...')
+    vr,vphi,deltav = f.add_nonlinear_pert_cartesian(unl,vnl,vr,vphi,deltav,vK)
+
+    if s.density:
+        density_pert = f.merge_density_lin_nonlin_cartesian(xl,yl,dl,dnl)
+
+    print('~ Saving output fields to files')
+
+    if s.density:
+        np.save(path + 'density_pert.npy', density_pert)
+        rho = f.get_normalise_density_field_cartesian(density_pert)
+        np.save(path + 'density.npy', rho)
+
+    np.save(path + 'vr.npy', vr)
+    np.save(path + 'vphi.npy', vphi)
+    np.save(path + 'deltavphi.npy', vphi - (-s.cw * vK))
+    np.save(path + 'deltav.npy', deltav)
+
+print('~ Done! \n')
+
+
+
+
+
+
 
 #print('~ Interpolating to new grid')
 
@@ -88,5 +128,3 @@ if np.ndim(s.vchs) > 0:
     print('~ Making channel maps plot ...')
     f.make_contourplot(v_field[:,:,2]-v_field0[:,:,2], bar_label='$\\Delta v_n (r,\\varphi)$   [km/s]', WithChannels = True, vz_field = v_field[:,:,2], saveas = path + 'contour.pdf')
 """
-
-print('~ Done! \n')
