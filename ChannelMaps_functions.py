@@ -995,7 +995,9 @@ def make_contourplot(field, bar_label = None, title = None, saveas = None, WithC
     # plot disc edge and star
     plt.plot(s.disc_edge[:,0],s.disc_edge[:,1],color='k')
     plt.scatter(0,0,label="star",color='gold',zorder = +2,s = 80, marker=(5, 1))
-
+    if s.wake:
+        if WithChannels == None:
+            plt.plot(s.R[0]*np.cos(phi_wake(s.R[0])), s.R[0]*np.sin(phi_wake(s.R[0])), c='m', lw = 1)
     # plot channel maps
     if WithChannels == True:
 
