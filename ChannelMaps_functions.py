@@ -192,7 +192,7 @@ def viscous_damping_factor(r):  # Eq. (44) Bollati et al. 2021
 
 # NONLINEAR PERTURBATIONS
 
-def extract_burgers_IC(): # take the initial condition for burgers equation from linear density perturbation ...
+def extract_burgers_IC_old(): # take the initial condition for burgers equation from linear density perturbation ...
 
 
    eta_max = 25 # Semi-width of the support of the azimuthal profile of the linear density perturbation (Fig. 2-right panel Bollati et al. 2021 -> eta_max does not depend on x_match)
@@ -230,9 +230,63 @@ def extract_burgers_IC(): # take the initial condition for burgers equation from
 
    return eta,profile
 
+def extract_burgers_IC(X, inner = False): # take the initial condition for burgers equation from linear density perturbation ...
 
 
-def solve_burgers(eta,profile): # Solve eq. (10) Bollati et al. 2021
+   eta_max = 25 # Semi-width of the support of the azimuthal profile of the linear density perturbation (Fig. 2-right panel Bollati et al. 2021 -> eta_max does not depend on x_match)
+                # (This value does not depend on betap)
+   x = s.Xlin[0,:]
+   y = s.Ylin[:,0]
+
+   index = np.argmin(np.abs(x-X))
+   profile = s.Dlin[:,index]/np.sqrt(np.abs(X))
+   y_match = -np.sign(X)*0.5*(X)**2
+   y_cut = y[(y-y_match>-eta_max) & (y-y_match<eta_max)]
+   eta = y_cut - y_match*np.ones(len(y_cut))
+   profile = profile[(y-y_match>-eta_max) & (y-y_match<eta_max)]
+   plt.plot(profile)
+
+   # set t0 (t correponding to the x_match)
+   if inner == True:
+       s.t0_inner = t(s.Rp + s.l*X)
+   else:
+       s.t0 = t(s.Rp + s.l*X)
+
+   # set eta_tilde:
+   for i in range(len(eta)):
+      if profile[i] == 0 and eta[i]>-10 and eta[i]<0 :
+         zero = eta[i]
+      elif i!=(len(eta)-1) and profile[i]*profile[i+1]<0 and eta[i]>-10 and eta[i]<0:
+         zero = 0.5*(eta[i]+eta[i+1])
+   if inner == True:
+       s.eta_tilde_inner = -zero
+   else:
+       s.eta_tilde = -zero
+
+   # set C:
+   deta = eta[1]-eta[0]
+   if inner == True:
+       profile0 = profile[eta<-s.eta_tilde_inner]
+       C0 = -np.trapz(profile0, dx =  deta)
+       s.C_inner = (s.indad + 1)*s.betap*C0/2**(3/4)
+   else:
+       profile0 = profile[eta<-s.eta_tilde]
+       C0 = -np.trapz(profile0, dx =  deta)
+       s.C = (s.indad + 1)*s.betap*C0/2**(3/4)
+
+   if inner == True:
+       print('     eta_tilde = ',s.eta_tilde_inner)
+       print('     C0 = ',C0)
+       print('     t0 = ',s.t0_inner)
+   else:
+       print('     eta_tilde = ',s.eta_tilde)
+       print('     C0 = ',C0)
+       print('     t0 = ',s.t0)
+
+   return eta,profile
+
+
+def solve_burgers_old(eta,profile): # Solve eq. (10) Bollati et al. 2021
 
    profile = profile * (s.indad+1) * s.betap / 2**(3/4) # Eq. (15) Bollati et al. 2021
 
@@ -383,6 +437,143 @@ def solve_burgers(eta,profile): # Solve eq. (10) Bollati et al. 2021
 
    return time, eta, solution, eta_inner, solution_inner
 
+def solve_burgers(eta,profile, inner = False): # Solve eq. (10) Bollati et al. 2021
+
+   profile = profile * (s.indad+1) * s.betap / 2**(3/4) # Eq. (15) Bollati et al. 2021
+
+   deta = eta[1]-eta[0]
+
+   tf_th = 300 # time required to develop N-wave for betap = 1
+   tf = tf_th/s.betap # time required to display N-wave for generic betap, Eq. (39) Rafikov 2002
+
+   if inner == True:
+       eta_min = -s.eta_tilde_inner-np.sqrt(2*s.C_inner*tf) - 3  # Eq. (18) Bollati et al. 2021
+       eta_max = -s.eta_tilde_inner+np.sqrt(2*s.C_inner*tf) + 3
+   else:
+       eta_min = -s.eta_tilde-np.sqrt(2*s.C*tf) - 3  # Eq. (18) Bollati et al. 2021
+       eta_max = -s.eta_tilde+np.sqrt(2*s.C*tf) + 3
+
+   # extend the profile domain due to profile broadening during evolution ....
+   extr = eta[-1]
+   while extr<eta_max:
+      eta = np.append(eta,eta[-1]+deta)
+      extr = eta[-1]
+      profile = np.append(profile,0)
+   extr = eta[0]
+   while extr>eta_min:
+      eta = np.insert(eta,0,eta[0]-deta)
+      extr = eta[0]
+      profile = np.insert(profile,0,0)
+
+   Neta = len(eta) # number of centers
+   a = eta[0] - deta/2
+   b = eta[-1] + deta/2
+
+   L  = b-a   # spatial grid length
+   T  = tf    # final time
+
+   # set time array
+
+   x = np.zeros(Neta+1) # cells edges
+   for i in range(0,Neta+1):
+       x[i] = a+i*deta
+
+   solution = [np.zeros((Neta),  dtype=float)]
+   time = [0]
+
+   # linear solution as initial condition
+   solution[0] = profile
+
+   # define flux vector
+   F = np.zeros(Neta+1) #there is a flux at each cell edge!!!!!
+
+   # define the flux function of Burgers equation
+   def flux(u):
+       return 0.5*u**2
+
+   # define the Central difference numerical flux---> ritorna la media aritmetica dei flux sx e dx passati
+   def CentralDifferenceFlux(uL,uR):
+       # compute physical fluxes at left and right state
+       FL = flux(uL)
+       FR = flux(uR)
+       return 0.5*(FL+FR)
+
+   def GodunovNumericalFlux(uL,uR):
+     # compute physical fluxes at left and right state
+     FL = flux(uL)
+     FR = flux(uR)
+     # compute the shock speed
+     s = 0.5*(uL + uR)
+     # from Toro's book
+     if (uL >= uR):
+         if (s > 0.0):
+             return FL
+         else:
+             return FR
+     else:
+         if (uL > 0.0):
+             return FL
+         elif (uR < 0.0):
+             return FR
+         else:
+             return 0.0
+
+   def NumericalFlux(uL,uR):
+       # return CentralDifferenceFlux(uL,uR)
+       return GodunovNumericalFlux(uL,uR)
+
+   # time integrate
+   lapsed_time = 0
+   counter = 0
+   while lapsed_time < tf:
+   #while counter < 10:
+      counter += 1
+      dt = min(deta * s.CFL / (max(abs(solution[-1])) + 1e-8), 0.02)
+      #print('max of sol = ', max(abs(solution[-1])), ', dt = ', dt)
+      time.append(time[-1]+dt)
+      lapsed_time += dt
+
+      # compute the interior fluxes
+      for i in range(1,Neta):
+          uL = solution[-1][i-1]
+          uR = solution[-1][i]
+          F[i] = NumericalFlux(uL,uR)
+
+      # compute the left boundary flux
+      if solution[-1][0] < 0.0:
+          uL = 2.0*solution[-1][0] - solution[-1][1]
+      else:
+          uL = solution[0][0]
+      uR = solution[-1][0]
+      F[0] = NumericalFlux(uL,uR)
+
+      # compute the right boundary flux
+      if solution[-1][Neta-1] > 0.0:
+          uR = 2.0 * solution[-1][Neta-1] - solution[-1][Neta-2]
+      else:
+          uR = solution[0][Neta-1]
+      uL = solution[-1][Neta-1]
+      F[Neta] = NumericalFlux(uL,uR)
+
+      solution.append(solution[-1][0:Neta] - dt / deta * (F[1:Neta+1] - F[0:Neta]))
+
+   solution = np.array(solution).transpose()
+   time = np.array(time)
+  
+   path = s.name + '/'
+   
+   if inner == False:
+       np.save(path + 't_outer.npy', time)
+       np.save(path + 'eta_outer.npy', eta)
+       np.save(path + 'chi_outer.npy', solution)
+   else:
+        np.save(path + 't_inner.npy', time)
+        np.save(path + 'eta_inner.npy', eta)
+        np.save(path + 'chi_inner.npy', solution)
+
+
+   return time, eta, solution
+
 
 def phi_wake(r): # Eq. (4) Bollati et al. 2021
 
@@ -460,7 +651,7 @@ def Lambda_fv(r):      # Eq. (29) Bollati et al. 2021
     return coeff*term1*term2
 
 
-def compute_nonlinear_pert():
+def compute_nonlinear_pert_old():
 
     print('  * Extracting Burgers initial condition from linear density perturbation ...')
     eta, profile = extract_burgers_IC()
@@ -485,6 +676,43 @@ def compute_nonlinear_pert():
             pphi = phi[j]
 
             Chi = get_chi(pphi, rr, time, eta, eta_inner, solution, solution_inner, tf)
+            dnl[j,i], unl[j,i], vnl[j,i] = get_dens_vel(rr, Chi) # COMPUTE DENSITY AND VELOCITY PERTURBATIONS
+
+    return dnl, unl, vnl
+
+def compute_nonlinear_pert():
+
+    print('  * Extracting outer Burgers initial condition from linear density perturbation ...')
+    eta_outer, profile_outer = extract_burgers_IC(s.x_match)
+    
+
+    print('  * Solving outer Burgers equation ...')
+    time, eta, solution = solve_burgers(eta_outer,profile_outer)
+
+    print('  * Extracting inner Burgers initial condition from linear density perturbation ...')
+    eta_inner, profile_inner = extract_burgers_IC(- s.x_match, inner = True)
+    
+    
+    print('  * Solving inner Burgers equation ...')
+    time_inner, eta_inner, solution_inner = solve_burgers(eta_inner, profile_inner, inner = True)
+
+    print('  * Computing nonlinear perturbations ...')
+
+    tf = time[-1]
+
+    dnl = np.zeros((s.Nphi,s.Nr))
+    unl = np.zeros((s.Nphi,s.Nr))
+    vnl = np.zeros((s.Nphi,s.Nr))
+
+    r = s.R[0,:]
+    phi = s.PHI[:,0]
+
+    for i in range(s.Nr):
+        rr = r[i]
+        for j in range(s.Nphi):
+            pphi = phi[j]
+
+            Chi = get_chi(pphi, rr, time, time_inner, eta, eta_inner, solution, solution_inner, tf)
             dnl[j,i], unl[j,i], vnl[j,i] = get_dens_vel(rr, Chi) # COMPUTE DENSITY AND VELOCITY PERTURBATIONS
 
     return dnl, unl, vnl
@@ -517,7 +745,7 @@ def compute_nonlinear_pert_cartesian():
 
     return dnl, unl, vnl
 
-def get_chi(pphi, rr, time, eta, eta_inner, solution, solution_inner, tf):
+def get_chi_old(pphi, rr, time, eta, eta_inner, solution, solution_inner, tf):
     # COMPUTATION OF Chi
 
     if (rr > (s.Rp - s.x_match*s.l)) and (rr <(s.Rp + s.x_match*s.l)): # exclude points inside anulus from linear regime
@@ -572,6 +800,80 @@ def get_chi(pphi, rr, time, eta, eta_inner, solution, solution_inner, tf):
             Chi = (-s.cw * np.sign(rr-s.Rp) * eta1 + s.eta_tilde) / (t1-s.t0)  #eq.(29) nonlinear.pdf
         else:
             Chi = 0
+
+    return Chi
+
+def get_chi(pphi, rr, time, time_inner, eta, eta_inner, solution, solution_inner, tf):
+    # COMPUTATION OF Chi
+
+    if (rr > (s.Rp - s.x_match*s.l)) and (rr <(s.Rp + s.x_match*s.l)): # exclude points inside anulus from linear regime
+        return 0.
+
+    # change coordinates of the grid point (rr,pphi) to (t1,eta1)
+    t1 = t(rr)
+    eta1 = Eta(rr,pphi)
+
+    if s.cw*(rr-s.Rp) < 0:
+        if t1 < (tf + s.t0):   # use numerical solution before the profile develops N-wave
+            index_t = np.argmax( (s.t0 + time) > t1 )
+            grid_t = [s.t0+time[index_t-1], s.t0+time[index_t]]
+    
+            # the density (Chi) azimuthal profile is flipped along the azimuthal direction
+            # both passing from r > Rp to r < Rp and from cw = -1 to cw = +1:
+    
+            if eta1 > eta[-1] or eta1 < eta[0]:
+                Chi = 0
+            else:
+                index_eta = np.argmax( eta > eta1 )
+                grid_eta = np.array([eta[index_eta-1],eta[index_eta]])
+                grid_solution = np.array([
+                    [solution[index_eta-1,index_t-1], solution[index_eta-1,index_t]],
+                    [solution[index_eta,index_t-1], solution[index_eta,index_t]]
+                    ])
+
+                inter = RectBivariateSpline(grid_eta, grid_t, grid_solution, kx=1, ky=1)
+                Chi = inter(eta1, t1)
+                
+        else: # for large t use the analytical N-wave shape (Eq. 17 Bollati et al. 2021)
+
+            extr_left = +s.cw * np.sign(rr-s.Rp) * s.eta_tilde - np.sqrt(2*s.C*(t1-s.t0))
+            extr_right = +s.cw * np.sign(rr-s.Rp) * s.eta_tilde + np.sqrt(2*s.C*(t1-s.t0))
+    
+            if eta1 > extr_left and eta1 < extr_right:
+                Chi = (-s.cw * np.sign(rr-s.Rp) * eta1 + s.eta_tilde) / (t1-s.t0)  #eq.(29) nonlinear.pdf
+            else:
+                Chi = 0
+
+    else:
+       if t1 < (tf + s.t0_inner):   # use numerical solution before the profile develops N-wave
+            index_t = np.argmax( (s.t0_inner + time_inner) > t1 )
+            grid_t = [s.t0_inner+time_inner[index_t-1], s.t0_inner+time_inner[index_t]]
+    
+            # the density (Chi) azimuthal profile is flipped along the azimuthal direction
+            # both passing from r > Rp to r < Rp and from cw = -1 to cw = +1:
+            if eta1 > eta_inner[-1] or eta1 < eta_inner[0]:
+                Chi = 0
+            else:
+                index_eta = np.argmax( eta_inner > eta1)
+                grid_eta = np.array([eta_inner[index_eta-1],eta_inner[index_eta]])
+                #grid_eta = np.array([eta[index_eta-1],eta[index_eta]])
+                grid_solution = np.array([
+                    [solution_inner[index_eta-1,index_t-1], solution_inner[index_eta-1,index_t]],
+                    [solution_inner[index_eta,index_t-1], solution_inner[index_eta,index_t]]
+                    ])
+
+                inter = RectBivariateSpline(grid_eta, grid_t, grid_solution, kx=1, ky=1)
+                Chi = inter(eta1, t1)
+
+       else: # for large t use the analytical N-wave shape (Eq. 17 Bollati et al. 2021)
+    
+            extr_left = +s.cw * np.sign(rr-s.Rp) * s.eta_tilde_inner - np.sqrt(2*s.C_inner*(t1-s.t0_inner))
+            extr_right = +s.cw * np.sign(rr-s.Rp) * s.eta_tilde_inner + np.sqrt(2*s.C_inner*(t1-s.t0_inner))
+    
+            if eta1 > extr_left and eta1 < extr_right:
+                Chi = (-s.cw * np.sign(rr-s.Rp) * eta1 + s.eta_tilde_inner) / (t1-s.t0_inner)  #eq.(29) nonlinear.pdf
+            else:
+                Chi = 0
 
     return Chi
 
@@ -693,7 +995,9 @@ def make_contourplot(field, bar_label = None, title = None, saveas = None, WithC
     # plot disc edge and star
     plt.plot(s.disc_edge[:,0],s.disc_edge[:,1],color='k')
     plt.scatter(0,0,label="star",color='gold',zorder = +2,s = 80, marker=(5, 1))
-
+    if s.wake:
+        if WithChannels == None:
+            plt.plot(s.R[0]*np.cos(phi_wake(s.R[0])), s.R[0]*np.sin(phi_wake(s.R[0])), c='m', lw = 1)
     # plot channel maps
     if WithChannels == True:
 

@@ -45,7 +45,7 @@ def init(file):
     global PA, PAp, i, xi
     global vchs, delta_vch
     global Nr, Nphi, Rmin, x_match, CFL
-    global show,xrange,yrange,density,name
+    global show,xrange,yrange,density,name,wake
 
     params = read_parameters(file)
 
@@ -92,6 +92,11 @@ def init(file):
         show = True
     else:
         show = False
+        
+    if 'wake' in params.keys():
+        wake = True
+    else:
+        wake = False
 
     if 'density' in params.keys():
         density = True
@@ -137,9 +142,9 @@ def init(file):
 
     # OTHER PARAMETERS (section 2.3 Bollati et al. 2021)
 
-    global eta_tilde
-    global t0 # t coordinate corresponding to r = Rp + l * x_match
-    global C # Eq. (16) Bollati et al. 2021
+    global eta_tilde, eta_tilde_inner
+    global t0, t0_inner # t coordinate corresponding to r = Rp + l * x_match
+    global C, C_inner # Eq. (16) Bollati et al. 2021
 
 
     global vKp  # planet keplerian velocity
